@@ -13,6 +13,18 @@ local S = {}
 
 --------------------------------------------------------------------- chrome
 
+--[[
+  The top bar had a hole in the middle of it, so the keys nobody remembers live
+  there now. It picks the longest set that fits beside the depth and the clock,
+  and shows none of them on a monitor, where there is no keyboard to press.
+]]
+local HEADER_HINTS = {
+  "x mine  f use  m med  v cond  ? menu",
+  "x mine  f use  m med  ? menu",
+  "x mine  f use  ? menu",
+  "x mine  ? menu",
+}
+
 function S.header(g, override)
   local c = UI.c
   local w = UI.w
@@ -21,9 +33,25 @@ function S.header(g, override)
     (w >= 58 and strat.name or string.upper(strat.tag)))
   local depth = math.floor(CU.mapgen.depthAt(g.map, g.y)) .. " m"
   local right = U.clock(g.clock)
+
   UI.fill(1, 1, w, 1, c.panel)
-  UI.write(2, 1, U.trunc(left, math.max(8, w - 26)), c.title, c.panel)
-  UI.write(w - #right - #depth - 4, 1, depth, c.accent, c.panel)
+
+  local rightEdge = w - #right - #depth - 4       -- where the depth starts
+  local leftRoom = math.max(8, math.min(#left, rightEdge - 3))
+
+  local hint
+  -- no keyboard on a monitor, so no keyboard hints there
+  if not (UI.touch or UI.usingMonitor or override) then
+    for _, h in ipairs(HEADER_HINTS) do
+      if leftRoom + 3 + #h < rightEdge then hint = h; break end
+    end
+  end
+
+  UI.write(2, 1, U.trunc(left, leftRoom), c.title, c.panel)
+  if hint then
+    UI.write(rightEdge - #hint - 1, 1, hint, c.faint, c.panel)
+  end
+  UI.write(rightEdge, 1, depth, c.accent, c.panel)
   UI.write(w - #right, 1, right, c.dim, c.panel)
   UI.hrule(1, 2, w, c.faint)
 end
