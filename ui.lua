@@ -177,8 +177,20 @@ function UI.write(x, y, text, fg, bg)
   if x > UI.w then return end
   if x + #text - 1 > UI.w then text = string.sub(text, 1, UI.w - x + 1) end
   if #text == 0 then return end
-  UI.t.setBackgroundColour(bg or C.bg)
-  UI.t.setTextColour(fg or C.text)
+  local b = bg or C.bg
+  local f = fg or C.text
+  --[[
+    Text drawn in the same colour as the background behind it is invisible, and
+    invisible on purpose only ever means a filled block, which is always spaces.
+    Anything with a glyph in it that matches its own background is a mistake, so
+    lift it to something readable rather than silently swallowing it.
+  ]]
+  if f == b and text:find("%S") then
+    f = (b == C.panel) and C.dim or C.text
+    if f == b then f = C.text end
+  end
+  UI.t.setBackgroundColour(b)
+  UI.t.setTextColour(f)
   UI.t.setCursorPos(x, y)
   UI.t.write(text)
 end
