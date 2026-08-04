@@ -34,6 +34,22 @@ local function slurp(path)
   return src
 end
 
+--[[
+  A cheap fingerprint of what is actually loaded, so "did the update take" has an
+  answer you can see rather than guess at. Per file, summed, so the order the
+  modules load in does not matter. The installer computes the same number over
+  what it downloaded; if the two agree you are running what you installed.
+]]
+local function stampOf(src)
+  local h = #src % 4294967296
+  for i = 1, #src, 97 do
+    h = (h * 131 + src:byte(i)) % 4294967296
+  end
+  return h
+end
+
+CU.build = 0
+
 local function loadModule(name)
   local path = ROOT .. "/lib/" .. name .. ".lua"
   local src = slurp(path)
@@ -41,6 +57,7 @@ local function loadModule(name)
   local compile = loadstring or load
   local chunk, err = compile(src, "@" .. name .. ".lua")
   if not chunk then error("syntax error in " .. name .. ": " .. tostring(err), 0) end
+  CU.build = (CU.build + stampOf(src)) % 4294967296
   local factory = chunk()
   if type(factory) ~= "function" then
     error("module " .. name .. " did not return a factory", 0)
@@ -48,11 +65,18 @@ local function loadModule(name)
   return factory(CU)
 end
 
+do
+  local self = slurp(ROOT .. "/writeoff.lua")
+  if self then CU.build = (CU.build + stampOf(self)) % 4294967296 end
+end
+
 for _, name in ipairs({ "util", "ui", "data", "tiles", "body", "fall", "inv",
                         "mapgen", "phys", "render", "combat", "run",
                         "screens", "save" }) do
   loadModule(name)
 end
+
+CU.buildTag = string.format("%04x", CU.build % 65536)
 
 local U, UI, D, S, R, Sv = CU.util, CU.ui, CU.data, CU.screens, CU.run, CU.save
 
@@ -204,7 +228,7 @@ local BRIEFING = {
   {
     "THE JOB",
     "A consignment was foolishly lost, three thousand metres deep in the spoiled earth's core. You are being paid, in safety promised to your family, to bring it back.",
-    "Eleven levels with three hundred metres each. The shafts only allow descent between stratums. The cargo is on layer 10, and the lift back up is layer 11. It will not let you on without it. Take that information as you will.",
+    "Eleven levels with three hundred metres each. The whole floor of the bottom gallery is the way on: stand on the arrows and press DOWN. The cargo is on layer 10, and the lift back up is layer 11. It will not let you on without it.",
   },
   {
     "MOVING",
@@ -241,7 +265,7 @@ local BRIEFING = {
   {
     "KEYS",
     "arrows or WASD move and climb.  SPACE jumps, and whichever way you hold steers it.  F or ENTER uses what you are standing on.",
-    "X mines.  M medical.  V condition.  I pack.  K map.  R rest.  C craft.  J paper.  Z wait.  ? menu.",
+    "X mines.  M medical.  V condition.  I pack.  K map.  R rest.  C craft.  J paper.  Z wait.  Q menu.",
     "On a monitor, use the buttons along the bottom instead.",
   },
   {
@@ -383,7 +407,9 @@ local function mainMenu()
     if sel > #items then sel = #items end
     UI.drawMenu(math.floor(UI.w / 2) - 9, menuY, 20, #items, items, sel, 0)
     UI.write(2, UI.h, U.trunc("runs " .. (meta.attempts or 0)
-      .. "   deepest " .. (meta.deepest or 0) .. " m", UI.w - 2), UI.c.faint)
+      .. "   deepest " .. (meta.deepest or 0) .. " m", UI.w - 14), UI.c.faint)
+    local tag = "build " .. CU.buildTag
+    UI.write(UI.w - #tag, UI.h, tag, UI.c.faint)
     UI.endFrame()
 
     local ev = UI.read()
