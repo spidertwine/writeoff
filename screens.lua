@@ -19,10 +19,10 @@ local S = {}
   and shows none of them on a monitor, where there is no keyboard to press.
 ]]
 local HEADER_HINTS = {
-  "x mine  f use  m med  v cond  ? menu",
-  "x mine  f use  m med  ? menu",
-  "x mine  f use  ? menu",
-  "x mine  ? menu",
+  "x mine  f use  m med  v cond  q menu",
+  "x mine  f use  m med  q menu",
+  "x mine  f use  q menu",
+  "x mine  q menu",
 }
 
 function S.header(g, override)
@@ -49,7 +49,8 @@ function S.header(g, override)
 
   UI.write(2, 1, U.trunc(left, leftRoom), c.title, c.panel)
   if hint then
-    UI.write(rightEdge - #hint - 1, 1, hint, c.faint, c.panel)
+    -- dim, not faint: faint is the same grey as the panel behind it
+    UI.write(rightEdge - #hint - 1, 1, hint, c.dim, c.panel)
   end
   UI.write(rightEdge, 1, depth, c.accent, c.panel)
   UI.write(w - #right, 1, right, c.dim, c.panel)
@@ -1674,7 +1675,7 @@ function S.hints(g)
   if UI.w >= 58 then
     return "arrows move  space jump  x mine  f use  m med  v cond  i pack  ? menu"
   end
-  return "arrows move  space jump  x mine  f use  m med  ? menu"
+  return "arrows move  space jump  x mine  f use  m med  q menu"
 end
 
 local TOUCH_ROWS = {
