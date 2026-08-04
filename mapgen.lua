@@ -459,12 +459,21 @@ function M.generate(index, rng)
     end
   end
 
-  -- 4. the way out, at the bottom
+  -- 4. the way out. the entire floor of the bottom gallery is it, edge to edge,
+  --    so there is no version of this where you miss the way on.
   local last = galleries[#galleries]
-  local co = last.corridor or { x1 = last.x1 + 2, x2 = last.x2 - 2 }
-  local exitX = U.clamp(co.x1 + rng:int(0, math.max(0, co.x2 - co.x1)),
-                        last.x1 + 1, last.x2 - 1)
-  put(exitX, last.y, index >= 11 and "A" or "V")
+  last.x1 = 2
+  last.x2 = w - 1
+  local headroom = last.head or 4
+  for x = last.x1, last.x2 do
+    for hy = last.y - headroom, last.y - 1 do
+      -- clear the gallery out, but never cut the rope that arrives in it
+      if not Tl.isClimb(at(x, hy)) then put(x, hy, " ") end
+    end
+    put(x, last.y, index >= 11 and "A" or "V")
+    put(x, last.y + 1, "#")
+  end
+  local exitX = math.floor((last.x1 + last.x2) / 2)
 
   -- 5. spawn, at the top
   local first = galleries[1]
