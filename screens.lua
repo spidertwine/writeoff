@@ -229,7 +229,13 @@ function S.statusTail(g)
 
   for _, off in ipairs({ 0, 1 }) do
     local d = Tl.get(Mg.get(g.map, g.x, g.y + off))
-    if d.prop or d.fixture or d.shaft or d.hatch then
+    if d.shaft then
+      return { "the way down. press DOWN to take it", "DOWN to descend" }, c.accent
+    end
+    if d.hatch then
+      return { "the surface lift. press DOWN to call it", "DOWN for the lift" }, c.gold
+    end
+    if d.prop or d.fixture then
       return { d.name .. ", f to use", d.name, "f to use" }, c.accent
     end
   end
