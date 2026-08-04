@@ -51,8 +51,13 @@ T.DEFS = {
   ["+"] = tile{ id = "scaffold", name = "scaffold", climb = true, platform = true,
                 colour = "metal", hard = 0.80, sharp = 0.30, cushion = 0.08 },
 
-  ["V"] = tile{ id = "shaft", name = "the shaft down", shaft = true, colour = "shaft" },
-  ["A"] = tile{ id = "hatch", name = "the surface hatch", hatch = true, colour = "gold" },
+  -- The whole floor of the last gallery is made of these, so the way on is a
+  -- band across the level rather than one tile you can walk straight past. You
+  -- stand on top of them and press DOWN.
+  ["V"] = tile{ id = "shaft", name = "the way down", shaft = true, platform = true,
+                colour = "shaft", hard = 0.8, sharp = 0.1, cushion = 0.1 },
+  ["A"] = tile{ id = "hatch", name = "the surface lift", hatch = true, platform = true,
+                colour = "gold", hard = 0.8, sharp = 0.1, cushion = 0.1 },
 
   -- things you interact with. they sit on the floor and you stand on their tile.
   ["c"] = tile{ id = "crate", name = "a crate", prop = true, colour = "wood" },
