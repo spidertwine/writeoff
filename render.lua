@@ -44,7 +44,7 @@ local LIT = {
   ["+"] = look("+", colors.lightGray, colors.black),
 
   -- the way down and the way out, marked so you cannot miss them
-  ["V"] = look("v", colors.black,     colors.cyan),
+  ["V"] = look("v", colors.white,     colors.cyan),
   ["A"] = look("^", colors.black,     colors.yellow),
 
   -- containers are solid blocks of colour, not letters
