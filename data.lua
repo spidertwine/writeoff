@@ -279,19 +279,19 @@ item("cell", { name = "power cell", short = "cell", kind = "misc", mass = 0.12, 
 item("pry_bar", { name = "pry bar", short = "pry bar", kind = "weapon", mass = 1.5, stack = 1, value = 15,
   desc = "Steel bar. Opens locked containers and works as a heavy weapon.",
   weapon = { dmg = 15, muscle = 12, bleed = 0.06, hands = 1, speed = 1.0, noise = 0.5,
-             fracture = 0.10, pry = true, dig = 26 } })
+             fracture = 0.10, pry = true, dig = 48 } })
 
 item("pipe", { name = "steel pipe", short = "pipe", kind = "weapon", mass = 1.2, stack = 1, value = 8,
   desc = "Length of pipe. Basic weapon. Loud.",
-  weapon = { dmg = 12, muscle = 14, bleed = 0.02, hands = 1, speed = 1.05, noise = 0.6, fracture = 0.12, dig = 14 } })
+  weapon = { dmg = 12, muscle = 14, bleed = 0.02, hands = 1, speed = 1.05, noise = 0.6, fracture = 0.12, dig = 38 } })
 
 item("rock_hammer", { name = "rock hammer", short = "hammer", kind = "weapon", mass = 2.5, stack = 1, value = 18, tier = 2,
   desc = "Mining hammer. Slow and heavy. Good at breaking things open.",
-  weapon = { dmg = 21, muscle = 22, bleed = 0.04, hands = 2, speed = 0.72, noise = 0.8, fracture = 0.3, dig = 46 } })
+  weapon = { dmg = 21, muscle = 22, bleed = 0.04, hands = 2, speed = 0.72, noise = 0.8, fracture = 0.3, dig = 75 } })
 
 item("cutter", { name = "cutter", short = "cutter", kind = "weapon", mass = 0.3, stack = 1, value = 12,
   desc = "Short blade. Fast, cuts deep, causes bleeding. Can amputate a limb.",
-  weapon = { dmg = 9, muscle = 6, bleed = 0.22, hands = 1, speed = 1.4, noise = 0.15, butcher = true, dig = 8 } })
+  weapon = { dmg = 9, muscle = 6, bleed = 0.22, hands = 1, speed = 1.4, noise = 0.15, butcher = true, dig = 16 } })
 
 item("bolt_gun", { name = "bolt gun", short = "bolt gun", kind = "weapon", mass = 2.8, stack = 1, value = 34, tier = 3,
   desc = "Fastener tool used as a weapon. Fires bolts at range.",
