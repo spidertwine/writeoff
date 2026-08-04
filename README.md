@@ -1,60 +1,13 @@
 # WRITE-OFF
 
 A side-on 2D descent game for CC:Tweaked. You are a contract scavenger sent three
-thousand metres down to recover a lost consignment. Eleven levels. The shafts only
+thousand metres down to recover a lost consignment. Returning home is not possible empty-handed - and failing to retrieve said consignment risks your family's lives.
+Eleven stratums await you, and the shafts only
 go down.
 
-The whole game is one decision, repeated: climb down the rope, or walk off the ledge.
+Head, two arms, two legs, a torso and pelvis, each one coloured by its own condition.
 
-You are drawn as the same figure as the medical screen. Head, two arms, two legs,
-each one coloured by its own condition. So is every other person down here: traders in
-their pods, and anything hostile that walks upright. A healthy scavenger is green. A bad landing
-turns the legs orange and then red, and you can read your own state straight off the
-map without opening anything.
-
-## Install
-
-Two ways, both of which mean pastebinning one file instead of sixteen.
-
-### From a repo, recommended
-
-Put the whole folder in a git repo. Then, in game, once:
-
-```
-pastebin get <code of install.lua> wget-writeoff
-wget-writeoff https://raw.githubusercontent.com/you/writeoff/main/
-```
-
-It reads `manifest.txt`, pulls every file listed in it, writes them to
-`/writeoff`, and remembers the URL in `/writeoff-source.txt`. After that, every
-future update is just:
-
-```
-wget-writeoff
-```
-
-`wget-writeoff check` lists what would change without writing anything.
-`wget-writeoff update` installs without offering to play.
-
-Because it reads the manifest from the repo rather than a list baked into itself,
-adding a module later needs no change to the installer. Add the path to
-`manifest.txt` and push.
-
-It downloads everything before it writes anything, so a dropped connection
-halfway through leaves the working copy alone. `/writeoff-data` is never touched,
-so your ledger and any suspended run survive an update.
-
-### From one file, no hosting
-
-```
-python3 tools/bundle.py
-```
-
-produces `writeoff-bundle.lua`, about 330 KB, which contains the whole game.
-Pastebin that, run it, and it writes the folder back out. `--strip` removes
-comments and blank lines for a smaller paste if you need it.
-
-### Manually
+### INSTALL
 
 The folder structure has to be preserved. The loader reads `ROOT/lib/<name>.lua`.
 
@@ -78,10 +31,10 @@ lib/save.lua      saving, loading, past runs
 
 Run with `writeoff`.
 
-If a monitor is attached, the game asks once, on the terminal, which screen you want.
+If a monitor is attached, the game asks once on the terminal, which screen you want.
 `writeoff term` and `writeoff monitor` skip the question. The terminal is never taken
 over without being asked, and touch buttons only appear on a monitor, because that is
-the only place there is no keyboard.
+the only place there is no keyboard. Obviously.
 
 ## The readout
 
