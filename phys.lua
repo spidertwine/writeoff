@@ -601,9 +601,9 @@ end
   through. Break the ceiling and you can jump up out of a hole.
 ]]
 
-P.MINE_ENERGY_TOOL = 3.2
-P.MINE_ENERGY_BARE = 4.5
-P.MINE_BARE_POWER  = 9
+P.MINE_ENERGY_TOOL = 1.8
+P.MINE_ENERGY_BARE = 3.2
+P.MINE_BARE_POWER  = 16
 P.MINE_MIN_ENERGY  = 4
 
 function P.mineTarget(g, hint)
@@ -660,12 +660,12 @@ function P.mine(g, hint)
   local bare = digPower <= 0
   local power = (bare and P.MINE_BARE_POWER or digPower)
     * U.clamp(CU.body.swingPower(body), 0.15, 1.6)
-  if body.energy < 25 then power = power * 0.6 end
+  if body.energy < 20 then power = power * 0.75 end
 
   local cost = bare and P.MINE_ENERGY_BARE or P.MINE_ENERGY_TOOL
   body.energy = math.max(0, body.energy - cost)
 
-  local swingTime = math.floor(16 / U.clamp(CU.body.swingPower(body), 0.2, 1.6))
+  local swingTime = math.floor(11 / U.clamp(CU.body.swingPower(body), 0.2, 1.6))
   g:advance(swingTime, { exertion = 0.95 })
   if g.over then return true end
   CU.ui.sfx("mine")
