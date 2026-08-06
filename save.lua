@@ -116,7 +116,25 @@ local function runPath() return Sv.dir .. "/run.dat" end
 local DEFAULT_META = {
   attempts = 0, best = 0, deepest = 0, totalScore = 0,
   ledger = {}, seniority = 0,
+  settings = { arcade = false, loot = "normal", light = "normal", kit = "full" },
 }
+
+-- What each setting actually does, so the screen and the game agree.
+Sv.LOOT_LEVELS  = { sparse = 0.6, normal = 1.0, generous = 1.7 }
+Sv.LIGHT_LEVELS = { dim = 0.7, normal = 1.0, bright = 1.5 }
+Sv.KIT_LEVELS   = { "nothing", "basic", "full" }
+
+-- Published to the rest of the game, which only ever reads them.
+function Sv.applySettings(meta)
+  local st = (meta and meta.settings) or DEFAULT_META.settings
+  CU.settings = {
+    arcade = st.arcade and true or false,
+    loot   = Sv.LOOT_LEVELS[st.loot or "normal"] or 1,
+    light  = Sv.LIGHT_LEVELS[st.light or "normal"] or 1,
+    kit    = st.kit or "full",
+  }
+  return CU.settings
+end
 
 function Sv.loadMeta()
   local text = readFile(metaPath())
@@ -126,6 +144,10 @@ function Sv.loadMeta()
   for k, v in pairs(DEFAULT_META) do
     if data[k] == nil then data[k] = U.copy(v) end
   end
+  for k, v in pairs(DEFAULT_META.settings) do
+    if data.settings[k] == nil then data.settings[k] = v end
+  end
+  Sv.applySettings(data)
   return data
 end
 
@@ -135,6 +157,11 @@ end
 
 -- Starting kit improves slowly with seniority. Nothing dramatic.
 function Sv.kitFor(meta)
+  local mode = (meta.settings and meta.settings.kit) or "full"
+  if mode == "nothing" then return {} end
+  if mode == "basic" then
+    return { "rag_strip", "hand_torch", "cell" }
+  end
   local kit = { "rag_strip", "rag_strip", "hand_torch", "cell", "ration_brick",
                 "water_flask", "pipe" }
   local s = meta.seniority or 0
@@ -158,6 +185,7 @@ function Sv.record(meta, g)
   meta.seniority = math.min(12, math.floor(meta.attempts / 2) + math.floor((meta.deepest or 0) / 600))
   table.insert(meta.ledger, 1, {
     id = g.id,
+    name = g.playerName,
     depth = math.floor(g.stats.maxDepth),
     stratum = g.stratumIndex,
     cause = g.extracted and "recovered" or (g.cause or "unrecorded"),
