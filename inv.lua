@@ -227,7 +227,7 @@ function Inv.lightRadius(inv)
       r = math.max(r, it.wear.lightRadius)
     end
   end
-  return r
+  return r * ((CU.settings and CU.settings.light) or 1)
 end
 
 function Inv.revealsInfection(inv)
