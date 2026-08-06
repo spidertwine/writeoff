@@ -552,7 +552,7 @@ local function drawMedical(g, sel)
     UI.write(2, UI.h - 5, "~bleed  #broken  !out of joint", c.faint)
     UI.write(2, UI.h - 4, "+dressed  Ttourniquet  *shrapnel  oinfected", c.faint)
   end
-  UI.write(2, UI.h - 1, U.trunc("1-7 limb  t treat  g drugs  v condition  q back", UI.w - 2), c.faint)
+  UI.write(2, UI.h - 1, U.trunc("1-7 limb  t treat  g drugs  e exercise  v cond  q back", UI.w - 2), c.faint)
   UI.endFrame()
 end
 
@@ -822,6 +822,7 @@ function S.medical(g, under)
       if ch == "t" then treatmentMenu(g, sel) end
       if ch == "g" then drugMenu(g) end
       if ch == "v" then S.condition(g); return end
+      if ch == "e" then S.exercise(g) end
       for id, meta in pairs(D.LIMBS) do
         if meta.key == ch then sel = id end
       end
@@ -846,6 +847,276 @@ function S.medical(g, under)
       end
     end
     if g.body.dead then g:endRun(g.body.cause) end
+  end
+end
+
+--------------------------------------------------------------------- gear
+
+--[[
+  What is on you and where. Seven worn slots, one hand, one light, and the
+  numbers those add up to, because "am I wearing the boots" should not be a
+  question you answer by reading your whole pack.
+]]
+local SLOTS = {
+  { key = "head",  label = "head" },
+  { key = "face",  label = "face" },
+  { key = "torso", label = "torso" },
+  { key = "hands", label = "hands" },
+  { key = "legs",  label = "legs" },
+  { key = "feet",  label = "feet" },
+  { key = "back",  label = "back" },
+}
+
+local function wearSummary(it)
+  local w = it.wear or {}
+  local bits = {}
+  if w.armour and w.armour > 0 then bits[#bits + 1] = "armour " .. w.armour end
+  if w.warmth and w.warmth > 0 then bits[#bits + 1] = "warm " .. w.warmth end
+  if w.carry and w.carry > 0 then bits[#bits + 1] = "carry +" .. w.carry end
+  if w.fallGuard then bits[#bits + 1] = "softens falls" end
+  if w.skullGuard then bits[#bits + 1] = "skull" end
+  if w.cutGuard then bits[#bits + 1] = "cut" end
+  if w.grip then bits[#bits + 1] = "grip" end
+  if w.spore then bits[#bits + 1] = "spores" end
+  if w.eyeGuard then bits[#bits + 1] = "eyes" end
+  if w.lightRadius then bits[#bits + 1] = "light " .. w.lightRadius end
+  if w.encumber and w.encumber > 0 then bits[#bits + 1] = "bulky" end
+  return table.concat(bits, ", ")
+end
+
+local function handSummary(it)
+  local w = it.weapon
+  if not w then return "" end
+  local bits = { (w.dmg or 0) .. " dmg" }
+  if w.dig and w.dig > 0 then bits[#bits + 1] = "digs " .. w.dig end
+  if w.pry then bits[#bits + 1] = "opens lockers" end
+  if w.butcher then bits[#bits + 1] = "cuts" end
+  if w.ranged then bits[#bits + 1] = "ranged" end
+  if (w.hands or 1) > 1 then bits[#bits + 1] = "two handed" end
+  return table.concat(bits, ", ")
+end
+
+local function drawGear(g, sel)
+  local c = UI.c
+  local body = g.body
+  local gear = body.gear or {}
+  UI.beginFrame()
+  S.header(g, "GEAR")
+
+  local wide = UI.w >= 58
+  local nameW = wide and 18 or 15
+  local y = 3
+  for i, slot in ipairs(SLOTS) do
+    local e = g.inv.wear[slot.key]
+    local it = e and D.ITEMS[e.id]
+    local chosen = (i == sel)
+    local bg = chosen and c.select or c.bg
+    UI.write(1, y, " " .. U.pad(slot.label, 6), chosen and c.text or c.faint, bg)
+    UI.write(8, y, U.pad(it and it.name or "-", nameW),
+      it and (chosen and c.text or c.dim) or c.faint, bg)
+    if wide and it then
+      UI.write(8 + nameW + 1, y, U.trunc(wearSummary(it), UI.w - 9 - nameW), c.faint, bg)
+    end
+    y = y + 1
+  end
+
+  y = y + 1
+  local hand = g.inv.weapon and D.ITEMS[g.inv.weapon.id]
+  local lit = g.inv.light and D.ITEMS[g.inv.light.id]
+  local hs = (sel == #SLOTS + 1)
+  local ls = (sel == #SLOTS + 2)
+  UI.write(1, y, " " .. U.pad("hand", 6), hs and c.text or c.faint, hs and c.select or c.bg)
+  UI.write(8, y, U.pad(hand and hand.name or "empty", nameW),
+    hand and c.text or c.faint, hs and c.select or c.bg)
+  if wide and hand then
+    UI.write(8 + nameW + 1, y, U.trunc(handSummary(hand), UI.w - 9 - nameW), c.faint,
+      hs and c.select or c.bg)
+  end
+  y = y + 1
+  UI.write(1, y, " " .. U.pad("light", 6), ls and c.text or c.faint, ls and c.select or c.bg)
+  local lightTxt = lit and lit.name or "none"
+  if lit and g.inv.light.cell then lightTxt = lightTxt .. "  " .. math.floor(g.inv.light.cell) .. "%" end
+  if lit and g.inv.light.fuel then lightTxt = lightTxt .. "  " .. U.dur(g.inv.light.fuel) end
+  UI.write(8, y, U.trunc(lightTxt, UI.w - 9), lit and c.gold or c.faint,
+    ls and c.select or c.bg)
+
+  UI.hrule(1, UI.h - 4, UI.w, c.faint)
+  UI.write(2, UI.h - 3, string.format("armour  head %d  torso %d  arms %d  legs %d",
+    math.floor(B.armourAt(body, "head")), math.floor(B.armourAt(body, "thorax")),
+    math.floor(B.armourAt(body, "larm")), math.floor(B.armourAt(body, "lleg"))), c.dim)
+  UI.write(2, UI.h - 2, string.format("warmth %d   carrying %.0f of %.0f kg   light %.1f",
+    gear.warmth or 0, Inv.mass(g.inv), B.carryCapacity(body),
+    Inv.lightRadius(g.inv)), c.dim)
+  UI.write(2, UI.h - 1, "up and down pick a slot   enter change it   q back", c.faint)
+  UI.endFrame()
+end
+
+local function changeSlot(g, sel)
+  local under = function() drawGear(g, sel) end
+  if sel <= #SLOTS then
+    local slot = SLOTS[sel].key
+    local items = {}
+    if g.inv.wear[slot] then
+      items[#items + 1] = { label = "take it off", run = function()
+        Inv.unequipWear(g.inv, slot)
+        Inv.updateGear(g.inv, g.body)
+        g:advance(12)
+        g:say("Off.", UI.c.dim)
+      end }
+    end
+    for _, e in ipairs(Inv.entries(g.inv, function(_, it)
+      return it.wear and it.wear.slot == slot end)) do
+      if not e.equipped then
+        local it = D.ITEMS[e.id]
+        items[#items + 1] = { label = "wear " .. it.name, hint = wearSummary(it),
+          run = function()
+            local ok, msg = Inv.equipWear(g.inv, e)
+            Inv.updateGear(g.inv, g.body)
+            g:advance(15, { exertion = 0.1 })
+            g:say(msg, ok and UI.c.ok or UI.c.warn)
+          end }
+      end
+    end
+    if #items == 0 then
+      UI.message("nothing for it", "You have nothing to wear on your " .. SLOTS[sel].label .. ".")
+      return
+    end
+    local pick = UI.pick(SLOTS[sel].label, items, { under = under, width = 44 })
+    if pick and pick.run then pick.run() end
+
+  elseif sel == #SLOTS + 1 then
+    local items = {}
+    if g.inv.weapon then
+      items[#items + 1] = { label = "empty your hands", run = function()
+        g.inv.weapon = nil
+        g:say("Stowed.", UI.c.dim)
+      end }
+    end
+    for _, e in ipairs(Inv.entries(g.inv, function(_, it) return it.weapon end)) do
+      if g.inv.weapon ~= e then
+        local it = D.ITEMS[e.id]
+        items[#items + 1] = { label = "hold the " .. it.name, hint = handSummary(it),
+          run = function()
+            local ok, msg = Inv.equipWeapon(g.inv, e, g.body)
+            g:say(msg, ok and UI.c.ok or UI.c.warn)
+          end }
+      end
+    end
+    if #items == 0 then
+      UI.message("empty handed", "You have nothing you could hold.")
+      return
+    end
+    local pick = UI.pick("in hand", items, { under = under, width = 44 })
+    if pick and pick.run then pick.run() end
+
+  else
+    local items = {}
+    if g.inv.light then
+      items[#items + 1] = { label = "put it out", run = function()
+        g.inv.light.lit = false
+        g.inv.light = nil
+        g:say("Dark.", UI.c.dim)
+      end }
+    end
+    for _, e in ipairs(Inv.entries(g.inv, function(_, it)
+      return it.light or (it.wear and it.wear.lightRadius) end)) do
+      if g.inv.light ~= e then
+        local it = D.ITEMS[e.id]
+        items[#items + 1] = { label = "light the " .. it.name, run = function()
+          local ok, msg = Inv.equipLight(g.inv, e)
+          g:say(msg, ok and UI.c.gold or UI.c.warn)
+        end }
+      end
+    end
+    if #items == 0 then
+      UI.message("no light", "You have nothing that gives off light.")
+      return
+    end
+    local pick = UI.pick("light", items, { under = under, width = 44 })
+    if pick and pick.run then pick.run() end
+  end
+  Inv.updateGear(g.inv, g.body)
+end
+
+function S.gear(g)
+  local sel = 1
+  local total = #SLOTS + 2
+  while not g.over do
+    drawGear(g, sel)
+    local ev = UI.read()
+    if ev.kind == "char" then
+      if ev.char == "q" or ev.char == "g" then return end
+      if ev.char == "i" then S.inventory(g, function() drawGear(g, sel) end) end
+    elseif ev.kind == "key" then
+      if ev.name == "back" then return end
+      if ev.name == "up" then sel = (sel - 2) % total + 1 end
+      if ev.name == "down" then sel = sel % total + 1 end
+      if ev.name == "enter" then changeSlot(g, sel) end
+    elseif ev.kind == "click" then
+      local row = ev.y - 2
+      if row >= 1 and row <= #SLOTS then sel = row; changeSlot(g, sel)
+      elseif row == #SLOTS + 2 then sel = #SLOTS + 1; changeSlot(g, sel)
+      elseif row == #SLOTS + 3 then sel = #SLOTS + 2; changeSlot(g, sel)
+      else return end
+    end
+  end
+end
+
+--------------------------------------------------------------------- exercise
+
+--[[
+  Work for the sake of working. It puts muscle back on, which nothing else in
+  the game does quickly, and it warms you up, which matters more than it sounds
+  like on the cold levels. It costs food, water and most of your energy, and a
+  broken bone rules it out.
+]]
+function S.exercise(g)
+  local body = g.body
+  local broken = nil
+  for _, id in ipairs(D.LIMB_ORDER) do
+    if body.limbs[id].bone == "fractured" then broken = D.LIMBS[id].name end
+  end
+  if broken then
+    UI.message("not with that", "You are not working out on a broken " .. broken .. ".")
+    return
+  end
+  local pain = select(1, B.effectivePain(body))
+  if pain > 62 then
+    UI.message("too sore", "You are in too much pain to push yourself.")
+    return
+  end
+  if body.energy < 20 then
+    UI.message("nothing left", "You have no energy to spend. Rest first.")
+    return
+  end
+  if not UI.confirm("EXERCISE", "Twenty minutes of hard work. It puts muscle back on "
+    .. "and warms you through. It will cost you food, water and most of what you "
+    .. "have left in the tank.") then return end
+
+  -- the work itself is a heat source, so the cold does not just take it back
+  g:advance(1200, { exertion = 1.0, heat = 5 })
+  if g.over then return end
+
+  local gained = 0
+  for _, id in ipairs(D.LIMB_ORDER) do
+    local l = body.limbs[id]
+    local cap = (l.bone ~= "ok") and 50 or 100
+    if not l.amputated and l.infection < D.TUNE.INFECT_REVEAL and l.muscle < cap then
+      local add = math.min(cap - l.muscle, 7)
+      l.muscle = l.muscle + add
+      gained = gained + add
+    end
+  end
+  body.temp = math.min(39.2, body.temp + 2.2)
+  body.energy = math.max(0, body.energy - 26)
+  body.mood = math.min(100, body.mood + 7)
+  body.immunity = U.clamp(body.immunity + 3, 10, 130)
+  UI.sfx("heal")
+  if gained > 0 then
+    g:say(string.format("Twenty minutes of work. %d points of muscle back, and you are warm.",
+      math.floor(gained)), UI.c.ok)
+  else
+    g:say("Twenty minutes of work. Nothing left to build, but you are warm.", UI.c.ok)
   end
 end
 
@@ -1205,6 +1476,26 @@ function S.interact(g, under)
         local n = 0
         for _, e in ipairs(Inv.entries(g.inv)) do
           if e.cell then e.cell = 100; n = n + 1 end
+        end
+        local dead = Inv.count(g.inv, "dead_cell")
+        if dead > 0 then
+          Inv.remove(g.inv, "dead_cell", dead)
+          Inv.add(g.inv, "cell", dead)
+          n = n + dead
+        end
+        -- and put the light back on, because that is why you came over here
+        if Inv.lightRadius(g.inv) < 1 then
+          for _, id in ipairs({ "hand_torch", "head_lamp", "bloom_light" }) do
+            local e = U.find(Inv.entries(g.inv), function(x) return x.id == id end)
+            if e then
+              if e.cell then e.cell = 100 end
+              local ok = Inv.equipLight(g.inv, e)
+              if ok then
+                g:say("Your " .. D.ITEMS[id].name .. " is lit again.", UI.c.gold)
+                break
+              end
+            end
+          end
         end
         g:say("Recharged " .. n .. " item" .. (n == 1 and "" or "s") .. ".", UI.c.gold)
       end }
@@ -1745,6 +2036,8 @@ local function drawPlay(g)
   end
 
   Rr.drawMap(g, 1, 3, mapW, mapH)
+  local rgb, strength = UI.painOverlay(select(1, B.effectivePain(g.body)))
+  if rgb then UI.vignette(1, 3, mapW, mapH, rgb, strength) end
   UI.hrule(1, ruleY, mapW, c.faint)
   g.log:render(2, logY, mapW - 3, logH)
 
@@ -1829,6 +2122,7 @@ function ACTIONS.cond(g)  S.condition(g) end
 function ACTIONS.wait(g)  g:advance(30, { exertion = 0.05 }) end
 function ACTIONS.jump(g)  CU.phys.jump(g) end
 function ACTIONS.mine(g)  CU.phys.mine(g) end
+function ACTIONS.gear(g)  S.gear(g) end
 function ACTIONS.menu(g)  moreMenu(g) end
 
 function S.play(g)
@@ -1843,9 +2137,14 @@ function S.play(g)
 
     g.hasGauge = Inv.count(g.inv, "drop_gauge") > 0
     CU.phys.reveal(g)
+    UI.tickFx()
     drawPlay(g)
 
-    local ev = UI.read()
+    -- redraw on a timer while anything is throbbing, so it actually moves
+    local pain = select(1, B.effectivePain(g.body))
+    local animating = UI.advanced and (UI.fxActive() or pain > 20)
+    local ev = UI.read(animating and 0.13 or nil)
+    if ev.kind == "timer" then ev = { kind = "none" } end
     local act = nil
     if ev.kind == "key" then
       local n = ev.name
@@ -1861,7 +2160,8 @@ function S.play(g)
       local map = { a = "left", d = "right", w = "up", s = "down",
                     f = "use", m = "med", i = "pack", k = "map", r = "rest",
                     c = "craft", j = "paper", v = "cond", ["?"] = "menu",
-                    q = "menu", z = "wait", x = "mine", [" "] = "jump" }
+                    q = "menu", z = "wait", x = "mine", g = "gear",
+                    [" "] = "jump" }
       act = map[ch]
     elseif ev.kind == "click" then
       act = UI.hitButton(ev.x, ev.y)
