@@ -578,6 +578,7 @@ function Med.drug(b, item, rng, doses)
       b.respArrest = true
       msg[#msg + 1] = "Too much opiate. You have stopped breathing."
       CU.ui.sfx("overdose")
+      CU.ui.flash({ 0.6, 0.1, 0.8 }, 1)
     end
   end
   if d.pain then
