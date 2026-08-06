@@ -1,347 +1,343 @@
--- WRITE-OFF / lib/combat.lua
--- Encounters. Short, expensive, and rarely worth starting.
+-- WRITE-OFF / lib/inv.lua
+-- Carrying, wearing, wielding, burning fuel, and making things out of scrap.
 
 return function(CU)
 
 local U = CU.util
 local D = CU.data
-local B = CU.body
-local Inv = CU.inv
-local UI = CU.ui
+local Inv = {}
 
-local C = {}
-
-local function newFoe(id, rng, scale)
-  local def = D.CREATURES[id]
-  if not def then return nil end
-  scale = scale or 1
+function Inv.new()
   return {
-    id = id, def = def,
-    name = def.name,
-    hp = math.floor(def.hp * scale * rng:range(0.85, 1.15)),
-    maxhp = math.floor(def.hp * scale),
-    armour = def.armour * scale,
-    stun = 0, rage = 0, scale = scale,
-    fled = false,
+    slots = {},
+    wear = {},          -- slot -> entry
+    weapon = nil,       -- entry
+    light = nil,        -- entry
+    flask = { amount = 0, clean = false },
   }
 end
 
---------------------------------------------------------------------- screen
+local function def(entry) return D.ITEMS[entry.id] end
+Inv.def = def
 
-local function draw(g, foes, hint)
-  local body = g.body
-  UI.beginFrame()
-  local w = UI.w
-  CU.screens.header(g, "CONTACT")
+--------------------------------------------------------------------- stacks
 
-  local y = 3
-  for i = 1, #foes do
-    local f = foes[i]
-    if not f.dead then
-      local frac = f.hp / math.max(1, f.maxhp)
-      UI.write(2, y, U.trunc(string.upper(f.name), 20), UI.c.crit)
-      UI.bar(24, y, w - 30, frac, frac > 0.5 and UI.c.bad or UI.c.crit, UI.c.panel)
-      if f.stun > 0 then UI.write(w - 4, y, "STN", UI.c.warn) end
-      y = y + 1
-    end
-  end
-  y = y + 1
-
-  local logH = UI.h - y - 4
-  g.log:render(2, y, w - 15, logH)
-
-  -- compact body readout down the right edge
-  CU.screens.miniBody(w - 12, y, body)
-
-  CU.screens.vitals(UI.h - 3, g)
-  if UI.touch then
-    local bw = math.max(7, math.floor((UI.w - 2) / 5))
-    local labels = { { "ATTACK", "attack" }, { "BACK OFF", "flee" }, { "LIGHT", "light" },
-                     { "MED", "med" }, { "PACK", "pack" } }
-    for i, b in ipairs(labels) do
-      UI.button(2 + (i - 1) * bw, UI.h - 1, bw - 1, 2, b[1], b[2])
-    end
-  else
-    UI.write(2, UI.h - 1, U.trunc(hint or
-      "a attack   f back off   l throw light   i pack   m medical", w - 2), UI.c.faint)
-  end
-  UI.endFrame()
-end
-
---------------------------------------------------------------------- resolution
-
-local function playerAttack(g, foes, rng)
-  local body = g.body
-  local weapon = g.inv.weapon
-  local wdef = weapon and D.ITEMS[weapon.id]
-  local spec = wdef and wdef.weapon or { dmg = 5, muscle = 3, bleed = 0, speed = 1.1, noise = 0.2, hands = 1 }
-
-  -- pick a target
-  local live = {}
-  for _, f in ipairs(foes) do if not f.dead then live[#live + 1] = f end end
-  if #live == 0 then return 0 end
-  local target = live[1]
-  if #live > 1 and not UI.headless then
-    local items = {}
-    for i, f in ipairs(live) do
-      items[#items + 1] = { label = f.name .. "  " .. math.floor(f.hp / math.max(1, f.maxhp) * 100) .. "%",
-                            key = tostring(i), value = f }
-    end
-    local pickres = UI.pick("target", items, { under = function() draw(g, foes) end })
-    if not pickres then return 0 end
-    target = pickres.value
-  end
-
-  if spec.ranged then
-    if Inv.count(g.inv, spec.ammo) <= 0 then
-      g:say("Empty.", UI.c.warn)
-      return 2
-    end
-    Inv.remove(g.inv, spec.ammo, 1)
-  end
-  if spec.needsCell then
-    if (weapon.cell or 0) <= 0 then
-      g:say("The prod has no charge.", UI.c.warn)
-      return 2
-    end
-    weapon.cell = weapon.cell - (spec.drain or 5)
-  end
-
-  local power = B.swingPower(body)
-  local hitChance = U.clamp(0.55 + power * 0.35 + B.steadiness(body) * 0.2
-    - (target.def.speed - 1) * 0.2, 0.12, 0.95)
-  local time = math.floor(4 / U.clamp(spec.speed or 1, 0.4, 2))
-
-  if not rng:chance(hitChance) then
-    g:say("You miss.", UI.c.dim)
-    UI.sfx("miss")
-    return time
-  end
-
-  local dmg = spec.dmg * power * rng:range(0.8, 1.25)
-  dmg = math.max(1, dmg - target.armour * rng:range(0.6, 1.2))
-  target.hp = target.hp - dmg
-  target.rage = target.rage + 1
-  if spec.stun and rng:chance(spec.stun * U.clamp(power, 0.2, 1.2)) then
-    target.stun = target.stun + 1
-    g:say("It is stunned.", UI.c.gold)
-  end
-  g:say(string.format("You hit it for %d.", math.floor(dmg)), UI.c.text)
-  UI.sfx("swing")
-
-  if target.hp <= 0 then
-    target.dead = true
-    g.stats.kills = g.stats.kills + 1
-    g:say("It is dead.", UI.c.ok)
-    UI.sfx("kill")
-    CU.mapgen.addBlood(g.map, g.x, g.y, 3)
-    -- splitting creatures
-    if target.def.splits and target.scale > 0.45 then
-      for _ = 1, 2 do
-        local child = newFoe(target.id, rng, target.scale * 0.55)
-        child.name = "lesser " .. target.def.name
-        foes[#foes + 1] = child
-      end
-      g:say("It splits in two and both halves keep coming.", UI.c.crit)
-    end
-    -- drops
-    if target.def.drops then
-      local drop = rng:weighted(target.def.drops)
-      if drop then
-        Inv.add(g.inv, drop.id, drop.n or 1)
-        g:say("Salvaged: " .. D.ITEMS[drop.id].name, UI.c.gold)
+function Inv.add(inv, id, n, meta)
+  local it = D.ITEMS[id]
+  if not it then return 0 end
+  n = n or 1
+  local added = 0
+  if it.stack > 1 and not meta then
+    for i = 1, #inv.slots do
+      local e = inv.slots[i]
+      if e.id == id and not e.equipped and e.n < it.stack then
+        local room = it.stack - e.n
+        local take = math.min(room, n - added)
+        e.n = e.n + take
+        added = added + take
+        if added >= n then return added end
       end
     end
   end
-  return time
+  while added < n do
+    local take = math.min(it.stack, n - added)
+    local e = { id = id, n = take }
+    if it.tool and it.tool.charges then e.charges = it.tool.charges end
+    if it.tool and it.tool.uses then e.uses = it.tool.uses end
+    if it.light and it.light.fuel then e.fuel = it.light.fuel end
+    if it.misc and it.misc.cell then e.cell = it.misc.cell end
+    if meta then for k, v in pairs(meta) do e[k] = v end end
+    inv.slots[#inv.slots + 1] = e
+    added = added + take
+  end
+  return added
 end
 
-local function foeAttack(g, f, rng)
-  local body = g.body
-  if f.stun > 0 then
-    f.stun = f.stun - 1
-    g:say(f.name .. " is still recovering.", UI.c.dim)
-    return
+function Inv.count(inv, id)
+  local n = 0
+  for i = 1, #inv.slots do
+    if inv.slots[i].id == id then n = n + inv.slots[i].n end
   end
-  local atk = rng:weighted(f.def.attacks)
-  if not atk then return end
-  local dodge = U.clamp(B.mobility(body) * 0.3 - (f.def.speed - 1) * 0.2, 0, 0.45)
-  if rng:chance(dodge) then
-    g:say("You dodge it.", UI.c.dim)
-    UI.sfx("miss")
-    return
+  return n
+end
+
+function Inv.remove(inv, id, n)
+  n = n or 1
+  local removed = 0
+  for i = #inv.slots, 1, -1 do
+    local e = inv.slots[i]
+    if e.id == id and not e.equipped then
+      local take = math.min(e.n, n - removed)
+      e.n = e.n - take
+      removed = removed + take
+      if e.n <= 0 then
+        if inv.weapon == e then inv.weapon = nil end
+        if inv.light == e then inv.light = nil end
+        table.remove(inv.slots, i)
+      end
+      if removed >= n then return removed end
+    end
   end
-  g:say(f.name .. " " .. atk.name .. ".", UI.c.warn)
-  UI.sfx((atk.bleed or 0) > 0.1 and "bitten" or "clawed")
-  local scaled = U.copy(atk)
-  for _, k in ipairs({ "skin", "muscle", "bleed", "pain", "burn" }) do
-    if scaled[k] then scaled[k] = scaled[k] * f.scale end
-  end
-  local events = B.hurt(body, scaled, rng)
-  g:sayAll(events)
-  if B.totalBleed(body) > 0.05 then CU.mapgen.addBlood(g.map, g.x, g.y, 2) end
-  if f.def.talks and f.def.voice and rng:chance(0.4) then
-    g:say('"' .. f.def.voice[rng:int(1, #f.def.voice)] .. '"', UI.c.infect)
+  return removed
+end
+
+function Inv.removeEntry(inv, entry, n)
+  n = n or 1
+  entry.n = entry.n - n
+  if entry.n <= 0 then
+    for i = #inv.slots, 1, -1 do
+      if inv.slots[i] == entry then table.remove(inv.slots, i) end
+    end
+    if inv.weapon == entry then inv.weapon = nil end
+    if inv.light == entry then inv.light = nil end
+    for slot, e in pairs(inv.wear) do
+      if e == entry then inv.wear[slot] = nil end
+    end
   end
 end
 
-local function tryFlee(g, foes, rng)
-  local body = g.body
-  local fastest = 1
-  for _, f in ipairs(foes) do
-    if not f.dead then fastest = math.max(fastest, f.def.speed) end
+function Inv.entries(inv, filter)
+  local out = {}
+  for i = 1, #inv.slots do
+    local e = inv.slots[i]
+    local it = def(e)
+    if it and (not filter or filter(e, it)) then out[#out + 1] = e end
   end
-  local chance = U.clamp(B.mobility(body) * 0.8 / fastest, 0.05, 0.9)
-  if body.held then chance = chance * 0.3 end
-  if rng:chance(chance) then
-    g:say("You get clear.", UI.c.ok)
-    return true
+  return out
+end
+
+function Inv.mass(inv)
+  local m = 0
+  for i = 1, #inv.slots do
+    local it = def(inv.slots[i])
+    if it then m = m + it.mass * inv.slots[i].n end
   end
-  g:say("Not fast enough. It gets a hit in.", UI.c.warn)
-  for _, f in ipairs(foes) do
-    if not f.dead then foeAttack(g, f, rng); break end
+  m = m + (inv.flask.amount or 0)
+  return m
+end
+
+function Inv.value(inv)
+  local v = 0
+  for i = 1, #inv.slots do
+    local it = def(inv.slots[i])
+    if it then v = v + it.value * inv.slots[i].n end
+  end
+  return v
+end
+
+--------------------------------------------------------------------- wearing
+
+function Inv.wearableSlot(it)
+  return it.wear and it.wear.slot or nil
+end
+
+function Inv.equipWear(inv, entry)
+  local it = def(entry)
+  local slot = Inv.wearableSlot(it)
+  if not slot then return false, "Not something you wear." end
+  if inv.wear[slot] then
+    inv.wear[slot].equipped = nil
+  end
+  entry.equipped = true
+  inv.wear[slot] = entry
+  return true, it.name .. " on."
+end
+
+function Inv.unequipWear(inv, slot)
+  local e = inv.wear[slot]
+  if not e then return false end
+  e.equipped = nil
+  inv.wear[slot] = nil
+  return true
+end
+
+function Inv.equipWeapon(inv, entry, body)
+  local it = def(entry)
+  if not it.weapon then return false, "That is not a weapon." end
+  local hands = CU.body.handsFree(body)
+  if (it.weapon.hands or 1) > hands then
+    return false, "You need more working hands for that."
+  end
+  inv.weapon = entry
+  return true, it.name .. " in hand."
+end
+
+function Inv.equipLight(inv, entry)
+  local it = def(entry)
+  if not it.light and not (it.wear and it.wear.lightRadius) then
+    return false, "That does not give off light."
+  end
+  inv.light = entry
+  entry.lit = true
+  return true, it.name .. " lit."
+end
+
+--------------------------------------------------------------------- gear
+
+function Inv.updateGear(inv, body)
+  local g = {
+    head = 0, face = 0, torso = 0, hands = 0, legs = 0, feet = 0,
+    warmth = 0, carry = 0, rad = 0, spore = 0, grip = 0,
+    fallGuard = 0, footGuard = 0, skullGuard = 0, cutGuard = 0, eyeGuard = 0,
+    mood = 0, encumber = 0, pump = false, lightRadius = 0,
+  }
+  for slot, e in pairs(inv.wear) do
+    local it = def(e)
+    if it and it.wear then
+      local w = it.wear
+      g[slot] = (g[slot] or 0) + (w.armour or 0)
+      g.warmth = g.warmth + (w.warmth or 0)
+      g.carry = g.carry + (w.carry or 0)
+      g.rad = math.min(0.92, g.rad + (w.rad or 0))
+      g.spore = math.min(0.95, g.spore + (w.spore or 0))
+      g.grip = g.grip + (w.grip or 0)
+      g.fallGuard = math.min(0.8, g.fallGuard + (w.fallGuard or 0))
+      g.footGuard = math.min(0.95, g.footGuard + (w.footGuard or 0))
+      g.skullGuard = math.min(0.8, g.skullGuard + (w.skullGuard or 0))
+      g.cutGuard = math.min(0.85, g.cutGuard + (w.cutGuard or 0))
+      g.eyeGuard = math.min(0.9, g.eyeGuard + (w.eyeGuard or 0))
+      g.mood = g.mood + (w.mood or 0)
+      g.encumber = g.encumber + (w.encumber or 0)
+      if w.pump then g.pump = true end
+    end
+  end
+  body.gear = g
+  body.load = Inv.mass(inv) + g.encumber * 2
+  return g
+end
+
+--------------------------------------------------------------------- light
+
+function Inv.lightRadius(inv)
+  local r = 0.35   -- what the eyes manage unaided down here
+  local e = inv.light
+  if e and e.lit then
+    local it = def(e)
+    local spec = it.light or (it.wear and it.wear)
+    if spec then
+      local ok = true
+      if spec.needsCell and (e.cell or 0) <= 0 then ok = false end
+      if spec.fuel and (e.fuel or 0) <= 0 then ok = false end
+      if ok then r = math.max(r, spec.radius or spec.lightRadius or 0) end
+    end
+  end
+  for _, we in pairs(inv.wear) do
+    local it = def(we)
+    if it and it.wear and it.wear.lightRadius and (we.cell or 0) > 0 then
+      r = math.max(r, it.wear.lightRadius)
+    end
+  end
+  return r * ((CU.settings and CU.settings.light) or 1)
+end
+
+function Inv.revealsInfection(inv)
+  local e = inv.light
+  if e and e.lit then
+    local it = def(e)
+    if it.light and it.light.reveal then return true end
   end
   return false
 end
 
-local function throwLight(g, foes, rng)
-  local candidates = Inv.entries(g.inv, function(e, it)
-    return it.light and it.light.throwable
-  end)
-  if #candidates == 0 then
-    g:say("You have nothing burning to throw.", UI.c.warn)
-    return false
-  end
-  local items = {}
-  for _, e in ipairs(candidates) do
-    items[#items + 1] = { label = D.ITEMS[e.id].name .. " x" .. e.n, value = e }
-  end
-  local sel = UI.pick("throw", items, { under = function() draw(g, foes) end })
-  if not sel then return false end
-  local e = sel.value
-  local it = D.ITEMS[e.id]
-  Inv.removeEntry(g.inv, e, 1)
-  local repel = it.light.repel or 0.2
-  g:say("You throw it. The light floods the gallery.", UI.c.gold)
-  local scared = 0
-  for _, f in ipairs(foes) do
-    if not f.dead then
-      local resist = f.def.boss and 0.7 or 0
-      local lightFear = (f.def.light and f.def.light < 0) and 0.3 or 0
-      if rng:chance(U.clamp(repel + lightFear - resist, 0, 0.95)) then
-        f.dead = true; f.fled = true
-        scared = scared + 1
-      else
-        f.stun = f.stun + 1
+function Inv.tickLights(inv, dt)
+  local msgs = {}
+  local function drainEntry(e, spec)
+    if not e or not spec then return end
+    if spec.fuel and e.fuel then
+      e.fuel = e.fuel - dt
+      if e.fuel <= 0 then
+        e.fuel = 0
+        e.lit = false
+        msgs[#msgs + 1] = def(e).name .. " has burnt out."
+        if inv.light == e then
+          inv.light = nil
+          Inv.removeEntry(inv, e, e.n)
+        end
+      end
+    elseif spec.needsCell and e.cell then
+      e.cell = e.cell - (spec.drain or 1) * dt / 60
+      if e.cell <= 0 then
+        e.cell = 0
+        msgs[#msgs + 1] = def(e).name .. " is out of charge. It needs a cell."
       end
     end
   end
-  if scared > 0 then
-    g:say(scared .. " of them back off into the dark.", UI.c.ok)
-  else
-    g:say("It flinches and keeps coming.", UI.c.warn)
+  local e = inv.light
+  if e and e.lit then
+    local it = def(e)
+    drainEntry(e, it.light)
+  end
+  for _, we in pairs(inv.wear) do
+    local it = def(we)
+    if it and it.wear and it.wear.lightRadius then drainEntry(we, it.wear) end
+  end
+  return msgs
+end
+
+function Inv.reload(inv, entry)
+  local it = def(entry)
+  local spec = it.light or (it.wear and it.wear)
+  if not spec or not spec.needsCell then return false, "That does not take a cell." end
+  if Inv.count(inv, "cell") <= 0 then return false, "No cells." end
+  Inv.remove(inv, "cell", 1)
+  entry.cell = 100
+  return true, "New cell fitted."
+end
+
+--------------------------------------------------------------------- crafting
+
+function Inv.canCraft(inv, recipe)
+  for id, n in pairs(recipe.need) do
+    if Inv.count(inv, id) < n then return false end
   end
   return true
 end
 
---------------------------------------------------------------------- entry
-
-function C.begin(g, ent, opts)
-  opts = opts or {}
-  local rng = g.rng
-  local def = D.CREATURES[ent.id]
-  if not def or ent.dead then return end
-
-  local foes = {}
-  local main = newFoe(ent.id, rng, 1)
-  if ent.name then main.name = ent.name end
-  if ent.hp then main.hp = ent.hp end
-  ent.hp = main.hp
-  main.ent = ent
-  foes[1] = main
-  if def.swarm then
-    for _ = 2, rng:int(2, 3) do foes[#foes + 1] = newFoe(ent.id, rng, 0.7) end
+function Inv.craft(inv, recipe, body)
+  if not Inv.canCraft(inv, recipe) then return false, "You do not have the parts." end
+  if recipe.int and body and body.traits.int < recipe.int then
+    return false, "You cannot work out how it goes together."
   end
-
-  g:blank()
-  g:say((ent.name or def.name) .. ".", UI.c.crit)
-  g:say(def.desc, UI.c.dim)
-  UI.sfx("alarm")
-  if opts.ambush then
-    for _, f in ipairs(foes) do foeAttack(g, f, rng) end
-  elseif opts.playerFirst then
-    for _, f in ipairs(foes) do f.stun = f.stun + 1 end
-  end
-
-  local running, rounds = true, 0
-  while running and not g.over do
-    rounds = rounds + 1
-    if rounds > 600 then break end
-    local anyAlive = false
-    for _, f in ipairs(foes) do if not f.dead then anyAlive = true end end
-    if not anyAlive then break end
-
-    if g.body.consciousness < D.TUNE.CONSCIOUS_OUT then
-      g:say("You are unconscious and it is still here.", UI.c.crit)
-      for _, f in ipairs(foes) do if not f.dead then foeAttack(g, f, rng) end end
-      g:advance(20, { exertion = 0 })
-      if g.body.dead then break end
-      if rng:chance(0.4) then
-        g:say("It loses interest in something that has stopped moving.", UI.c.dim)
-        break
-      end
-    else
-      draw(g, foes)
-      local ev = UI.read()
-      local acted, cost = false, 0
-      if ev.kind == "char" then
-        if ev.char == "a" then cost = playerAttack(g, foes, rng); acted = cost > 0
-        elseif ev.char == "f" then
-          if tryFlee(g, foes, rng) then
-            ent.cooldown = 6
-            local away = (g.x > ent.x) and -2 or 2
-            ent.x = ent.x + away
-            g:advance(12, { exertion = 0.9 })
-            running = false
-            break
-          end
-          acted = true; cost = 5
-        elseif ev.char == "l" then acted = throwLight(g, foes, rng); cost = 4
-        elseif ev.char == "i" then
-          CU.screens.inventory(g, function() draw(g, foes) end); acted = true; cost = 6
-        elseif ev.char == "m" then
-          CU.screens.medical(g, function() draw(g, foes) end); acted = true; cost = 0
-        end
-      elseif ev.kind == "key" and ev.name == "enter" then
-        cost = playerAttack(g, foes, rng); acted = cost > 0
-      elseif ev.kind == "click" then
-        local hit = UI.hitButton(ev.x, ev.y)
-        if hit == "attack" then cost = playerAttack(g, foes, rng); acted = cost > 0
-        elseif hit == "flee" then
-          if tryFlee(g, foes, rng) then ent.cooldown = 6; running = false; break end
-          acted = true; cost = 5
-        elseif hit == "light" then acted = throwLight(g, foes, rng); cost = 4
-        elseif hit == "med" then CU.screens.medical(g, function() draw(g, foes) end); acted = true
-        elseif hit == "pack" then
-          CU.screens.inventory(g, function() draw(g, foes) end); acted = true; cost = 6
-        end
-      end
-      if acted then
-        if cost > 0 then g:advance(cost, { exertion = 0.9 }) end
-        if g.over then break end
-        for _, f in ipairs(foes) do if not f.dead then foeAttack(g, f, rng) end end
-        if g.body.dead then g:endRun(g.body.cause) end
-      end
-    end
-    if main.ent then main.ent.hp = main.hp end
-  end
-
-  if main.dead then ent.dead = true end
-  ent.hp = main.hp
+  for id, n in pairs(recipe.need) do Inv.remove(inv, id, n) end
+  Inv.add(inv, recipe.out, recipe.n or 1)
+  return true, "Made: " .. D.ITEMS[recipe.out].name ..
+    ((recipe.n or 1) > 1 and (" x" .. recipe.n) or "")
 end
 
-C.newFoe = newFoe
-CU.combat = C
-return C
+function Inv.availableRecipes(inv, body)
+  local out = {}
+  for i = 1, #D.RECIPES do
+    local r = D.RECIPES[i]
+    local can = Inv.canCraft(inv, r)
+    local smart = (not r.int) or (body and body.traits.int >= r.int)
+    out[#out + 1] = { recipe = r, can = can and smart, missing = not can, dumb = not smart }
+  end
+  return out
+end
+
+--------------------------------------------------------------------- water
+
+function Inv.drink(inv, body, amount)
+  amount = amount or 0.25
+  if inv.flask.amount <= 0 then return false, "The flask is empty." end
+  local take = math.min(amount, inv.flask.amount)
+  inv.flask.amount = inv.flask.amount - take
+  body.thirst = U.clamp(body.thirst + take * 100, 0, 120)
+  if not inv.flask.clean then
+    body.sick = U.clamp(body.sick + take * 40, 0, 100)
+    return true, "Dirty water. That may make you sick."
+  end
+  return true, "Clean water."
+end
+
+function Inv.fill(inv, clean)
+  if Inv.count(inv, "water_flask") <= 0 then return false, "You need a flask." end
+  inv.flask.amount = 0.75
+  inv.flask.clean = clean and true or false
+  return true, clean and "Flask filled with clean water." or "Flask filled. The water is not clean."
+end
+
+CU.inv = Inv
+return Inv
 
 end
