@@ -610,7 +610,8 @@ function M.populate(map, rng)
 
   -- creatures
   if #strat.creatures > 0 then
-    local count = 2 + rng:int(0, 2) + math.floor(map.index / 4)
+    -- Deliberately thin. Meeting something should be an event, not the weather.
+    local count = 1 + rng:int(0, 2) + math.floor(map.index / 7)
     for _ = 1, count do
       if i > #spots then break end
       local s = spots[i]; i = i + 1
