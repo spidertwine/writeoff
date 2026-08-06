@@ -24,6 +24,7 @@ function M.rollLoot(pool, tier, rng, count)
     end
   end
   local out = {}
+  count = math.max(1, math.floor(count * ((CU.settings and CU.settings.loot) or 1) + 0.5))
   for _ = 1, count do
     local sel = rng:weighted(candidates)
     if sel then
@@ -609,7 +610,7 @@ function M.populate(map, rng)
 
   -- creatures
   if #strat.creatures > 0 then
-    local count = 3 + rng:int(0, 3) + math.floor(map.index / 3)
+    local count = 2 + rng:int(0, 2) + math.floor(map.index / 4)
     for _ = 1, count do
       if i > #spots then break end
       local s = spots[i]; i = i + 1
