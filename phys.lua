@@ -404,7 +404,8 @@ local function impale(g, mode, metres)
     hit = { skin = 12, muscle = 5, bleed = 0.055, pain = 16 }
   end
   g:say("A spike goes through your " .. D.LIMBS[leg].name .. ".", CU.ui.c.crit)
-  CU.ui.sfx("bitten")
+  CU.ui.sfx("spike")
+  CU.ui.flash({ 1, 0.02, 0.02 }, 1)
   g:sayAll(CU.body.hurt(body, hit, rng, { limb = leg, silent = true }))
   M.addBlood(g.map, g.x, g.y, 3)
 
@@ -433,7 +434,8 @@ local function launch(g)
   local body = g.body
   local rng = g.rng
   g:say("The plate throws you.", CU.ui.c.warn)
-  CU.ui.sfx("jump")
+  CU.ui.sfx("boing")
+  CU.ui.flash({ 0.9, 0.8, 0.2 }, 0.7)
 
   local dx = rng:chance(0.5) and 1 or -1
   if not P.fits(map, g.x + dx, g.y) then dx = -dx end
@@ -451,7 +453,8 @@ local function launch(g)
         body.brain = U.clamp(body.brain - rng:range(1, 4), 0, 100)
       end
       g:say("You hit the ceiling.", CU.ui.c.crit)
-      CU.ui.sfx("crack")
+      CU.ui.sfx("clang")
+      CU.ui.flash({ 1, 0.05, 0.05 }, 0.8)
       break
     end
     g.y = g.y - 1
@@ -471,7 +474,8 @@ local function snap(g)
   if body.limbs[leg].amputated then leg = (leg == "lleg") and "rleg" or "lleg" end
   body.trapped = { limb = leg, timer = P.TRAP_SECONDS, struggles = 0 }
   g:say("A leg trap closes on your " .. D.LIMBS[leg].name .. ".", CU.ui.c.crit)
-  CU.ui.sfx("crack")
+  CU.ui.sfx("snap")
+  CU.ui.flash({ 1, 0.02, 0.02 }, 1)
   g:sayAll(CU.body.hurt(body, {
     skin = 20, muscle = 13, bleed = 0.10, pain = 44, frac = 0.12,
   }, rng, { limb = leg, silent = true }))
@@ -670,6 +674,7 @@ function P.mine(g, hint)
   if g.over then return true end
   CU.ui.sfx("mine")
 
+  body.temp = math.min(39.5, body.temp + 0.055)
   if bare then
     local arm = (g.rng:chance(0.5)) and "larm" or "rarm"
     CU.body.hurt(body, { skin = 1.6, pain = 2.4 }, g.rng, { limb = arm, silent = true })
