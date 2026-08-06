@@ -781,7 +781,9 @@ function P.stepEntities(g)
         local dx = g.x - e.x
         local dy = g.y - e.y
         local dist = math.abs(dx) + math.abs(dy) * 2
-        local range = 5 + def.senses * 7 + CU.inv.lightRadius(g.inv)
+        -- how far off something notices you. kept short, so two creatures on a
+        -- level read as two encounters rather than a running escort
+        local range = 4 + def.senses * 5 + CU.inv.lightRadius(g.inv) * 0.6
 
         if dist <= 1 and math.abs(dy) <= 1 then
           if (e.cooldown or 0) <= 0 then
@@ -799,7 +801,7 @@ function P.stepEntities(g)
           e.patience = (e.patience or 0) + 1
         elseif e.awake then
           e.patience = (e.patience or 0) + 1
-          if e.patience > 30 then
+          if e.patience > 16 then
             e.awake = false; e.patience = 0; e.seenBy = false
           end
         end
