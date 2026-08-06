@@ -52,6 +52,20 @@ end
 local function chance(rng, p) return rng:chance(U.clamp(p, 0, 0.97)) end
 
 -- Resolve a landing. Returns a list of { text, colour } lines in plain language.
+--[[
+  How you land matters as much as how far you fell. Slow drops you take on your
+  feet, which is what legs are for. Past that you tip, and once you are tipping
+  the ground meets your hands, your ribs and eventually your head instead.
+
+  So the same fifty metres is a pair of broken legs or a broken arm and a torn
+  chest, depending on whether you kept your feet under you.
+]]
+local SHARE = {
+  feet = { legs = 1.00, arms = 0.42, trunk = 0.30, head = 0.18, how = "feet first" },
+  side = { legs = 0.58, arms = 0.95, trunk = 0.75, head = 0.48, how = "on your side" },
+  flat = { legs = 0.30, arms = 0.85, trunk = 1.00, head = 0.90, how = "flat, back first" },
+}
+
 function F.land(body, metres, surfaceChar, rng)
   local B = CU.body
   local Tl = CU.tiles
@@ -75,77 +89,95 @@ function F.land(body, metres, surfaceChar, rng)
     return out
   end
 
-  say(string.format("You fall %d m and land on %s.", math.floor(metres), surface.name),
+  -- keeping your feet gets harder the faster you arrive
+  local composure = U.clamp(1 - (eff - 8) / 82, 0.10, 0.95)
+  composure = composure * U.clamp(0.55 + B.mobility(body) * 0.5, 0.35, 1.1)
+  local roll = rng:float()
+  local landing
+  if roll < composure then landing = "feet"
+  elseif roll < composure + (1 - composure) * 0.58 then landing = "side"
+  else landing = "flat" end
+  local sh = SHARE[landing]
+  body.lastFall.landing = landing
+
+  say(string.format("You fall %d m and land %s on %s.",
+      math.floor(metres), sh.how, surface.name),
       eff > 30 and c.crit or c.warn)
   CU.ui.sfx(eff > 30 and "crack" or "hurt")
+  CU.ui.flash({ 1, 0.05, 0.05 }, U.clamp(0.35 + eff / 90, 0.35, 1))
 
-  -- which legs take it
+  ------------------------------------------------------------------ legs
   local legs = {}
   for _, id in ipairs({ "lleg", "rleg" }) do
     if not body.limbs[id].amputated then legs[#legs + 1] = id end
   end
   if #legs == 0 then legs = { "abdomen" } end
-
-  -- the first leg down takes more than the second
-  local share = { 1.0, 0.78 }
+  local legShare = { 1.0, 0.78 }
   for i, id in ipairs(legs) do
-    local s = share[i] or 0.6
-    local hit = {
+    local s = (legShare[i] or 0.6) * sh.legs
+    B.hurt(body, {
       muscle = eff * 0.85 * s * (1 - sharp * 0.45),
       skin   = eff * 0.50 * s * (0.30 + sharp),
       bleed  = eff * 0.0055 * s * sharp * 2.2,
       pain   = eff * 1.30 * s,
-    }
-    B.hurt(body, hit, rng, { limb = id, silent = true })
+    }, rng, { limb = id, silent = true })
 
-    local l = body.limbs[id]
-    local fracP = ((eff * s) - 18) / 90 * (1 - sharp * 0.4)
-    local disloP = ((eff * s) - 7) / 45
-    if chance(rng, fracP) then
+    local load = eff * s
+    if chance(rng, (load - 18) / 90 * (1 - sharp * 0.4)) then
       B.breakBone(body, id, rng, out)
-    elseif chance(rng, disloP) then
+    elseif chance(rng, (load - 7) / 45) then
       B.dislocate(body, id, rng, out)
     end
-    if sharp > 0.5 and chance(rng, (eff * s - 10) / 140) then
-      l.shrapnel = l.shrapnel + rng:int(1, 2)
+    if sharp > 0.5 and chance(rng, (load - 10) / 140) then
+      body.limbs[id].shrapnel = body.limbs[id].shrapnel + rng:int(1, 2)
       say("Rock fragments are lodged in your " .. D.LIMBS[id].name .. ".", c.warn)
     end
   end
 
-  -- you put your hands out
-  if chance(rng, (eff - 32) / 190) then
-    local arm = rng:pick({ "larm", "rarm" })
+  ------------------------------------------------------------------ arms
+  -- both of them, independently, because you do not fall on one hand
+  for _, arm in ipairs({ "larm", "rarm" }) do
     if not body.limbs[arm].amputated then
-      B.hurt(body, {
-        muscle = eff * 0.35, skin = eff * 0.28 * (0.3 + sharp),
-        bleed = eff * 0.002 * sharp, pain = eff * 0.7,
-      }, rng, { limb = arm, silent = true })
-      if chance(rng, (eff - 45) / 150) then
-        B.breakBone(body, arm, rng, out)
-      elseif chance(rng, (eff - 25) / 90) then
-        B.dislocate(body, arm, rng, out)
+      local load = eff * sh.arms * (rng:chance(0.5) and 1.0 or 0.7)
+      if load > 7 then
+        B.hurt(body, {
+          muscle = load * 0.45,
+          skin   = load * 0.34 * (0.3 + sharp),
+          bleed  = load * 0.0022 * sharp,
+          pain   = load * 0.75,
+        }, rng, { limb = arm, silent = true })
+        if chance(rng, (load - 24) / 105) then
+          B.breakBone(body, arm, rng, out)
+        elseif chance(rng, (load - 11) / 58) then
+          B.dislocate(body, arm, rng, out)
+        end
       end
     end
   end
 
-  -- the trunk folds
-  if eff > 25 then
-    B.hurt(body, { muscle = eff * 0.22, pain = eff * 0.4 }, rng,
+  ------------------------------------------------------------------ trunk
+  local trunk = eff * sh.trunk
+  if trunk > 12 then
+    B.hurt(body, { muscle = trunk * 0.32, pain = trunk * 0.55 }, rng,
       { limb = "abdomen", silent = true })
+    if landing ~= "feet" then
+      B.hurt(body, { muscle = trunk * 0.26, skin = trunk * 0.2 * (0.3 + sharp),
+                     pain = trunk * 0.45 }, rng, { limb = "thorax", silent = true })
+    end
   end
-  local internalP = (eff - 45) / 300
-  if chance(rng, internalP) then
+  if chance(rng, (trunk - 34) / 250) then
     body.internal = body.internal + eff * 0.00035
     say("Something has torn inside you.", c.crit)
   end
 
-  -- the head, last, and only from a real height
-  local headP = (eff - 60) / 280 * (1 - (gear.skullGuard or 0))
-  if chance(rng, headP) then
+  ------------------------------------------------------------------ head
+  local headLoad = eff * sh.head
+  if chance(rng, (headLoad - 26) / 195 * (1 - (gear.skullGuard or 0))) then
     B.hurt(body, {
-      muscle = eff * 0.18, skin = eff * 0.2 * (0.3 + sharp), pain = eff * 0.5,
+      muscle = headLoad * 0.2, skin = headLoad * 0.22 * (0.3 + sharp),
+      pain = headLoad * 0.55,
     }, rng, { limb = "head", silent = true })
-    body.brain = U.clamp(body.brain - eff * 0.06, 0, 100)
+    body.brain = U.clamp(body.brain - headLoad * 0.07, 0, 100)
     say("Your head hit the ground.", c.crit)
   end
 
