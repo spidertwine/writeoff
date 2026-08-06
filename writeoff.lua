@@ -265,7 +265,8 @@ local BRIEFING = {
   {
     "KEYS",
     "arrows or WASD move and climb.  SPACE jumps, and whichever way you hold steers it.  F or ENTER uses what you are standing on.",
-    "X mines.  M medical.  V condition.  I pack.  K map.  R rest.  C craft.  J paper.  Z wait.  Q menu.",
+    "X mines.  M medical.  G gear.  V condition.  I pack.  K map.  R rest.  C craft.  J paper.  Z wait.  Q menu.",
+    "In medical, E is exercise: it puts muscle back on and warms you through.",
     "On a monitor, use the buttons along the bottom instead.",
   },
   {
@@ -328,6 +329,91 @@ local function briefing()
   end
 end
 
+--------------------------------------------------------------------- settings
+
+--[[
+  Behind a four digit code, because these change the shape of the game and are
+  not meant to be found by accident. The code is not security, it is a door with
+  a sign on it.
+]]
+local SETTING_ROWS = {
+  { key = "arcade", label = "arcade mode",
+    values = { false, true },
+    show = function(v) return v and "on, names your runs" or "off" end },
+  { key = "loot", label = "loot",
+    values = { "sparse", "normal", "generous" },
+    show = function(v) return v end },
+  { key = "light", label = "light",
+    values = { "dim", "normal", "bright" },
+    show = function(v) return v end },
+  { key = "kit", label = "starting kit",
+    values = { "nothing", "basic", "full" },
+    show = function(v) return v end },
+}
+
+local function cycle(row, current, dir)
+  local at = 1
+  for i, v in ipairs(row.values) do if v == current then at = i end end
+  at = ((at - 1 + dir) % #row.values) + 1
+  return row.values[at]
+end
+
+local function settingsScreen(meta)
+  local sel = 1
+  while true do
+    UI.beginFrame()
+    UI.fill(1, 1, UI.w, 1, UI.c.panel)
+    UI.write(2, 1, "SETTINGS", UI.c.title, UI.c.panel)
+    UI.hrule(1, 2, UI.w, UI.c.faint)
+    for i, row in ipairs(SETTING_ROWS) do
+      local y = 3 + i
+      local chosen = (i == sel)
+      local bg = chosen and UI.c.select or UI.c.bg
+      UI.write(1, y, " " .. U.pad(row.label, 15), chosen and UI.c.text or UI.c.dim, bg)
+      UI.write(17, y, U.trunc(row.show(meta.settings[row.key]), UI.w - 18),
+        chosen and UI.c.gold or UI.c.faint, bg)
+    end
+    UI.write(2, UI.h - 3, "loot changes how much containers hold.", UI.c.faint)
+    UI.write(2, UI.h - 2, "light changes how far you can see.", UI.c.faint)
+    UI.write(2, UI.h - 1, "left and right change   q saves and closes", UI.c.faint)
+    UI.endFrame()
+
+    local ev = UI.read()
+    if ev.kind == "char" and ev.char == "q" then break end
+    if ev.kind == "key" then
+      if ev.name == "back" then break end
+      if ev.name == "up" then sel = (sel - 2) % #SETTING_ROWS + 1 end
+      if ev.name == "down" then sel = sel % #SETTING_ROWS + 1 end
+      if ev.name == "left" or ev.name == "right" or ev.name == "enter" then
+        local row = SETTING_ROWS[sel]
+        meta.settings[row.key] = cycle(row, meta.settings[row.key],
+          ev.name == "left" and -1 or 1)
+      end
+    elseif ev.kind == "click" then
+      local row = ev.y - 3
+      if SETTING_ROWS[row] then
+        sel = row
+        meta.settings[row].key = meta.settings[row].key
+        local r = SETTING_ROWS[row]
+        meta.settings[r.key] = cycle(r, meta.settings[r.key], 1)
+      else break end
+    end
+  end
+  Sv.applySettings(meta)
+  Sv.saveMeta(meta)
+end
+
+local function openSettings(meta)
+  local code = UI.prompt("SETTINGS", "Four digit code.", { mask = "*", max = 4,
+    numeric = true, allowQ = true })
+  if not code then return end
+  if code ~= "2120" then
+    UI.message("no", "That is not the code.", UI.c.crit)
+    return
+  end
+  settingsScreen(meta)
+end
+
 --------------------------------------------------------------------- ledger
 
 local function ledgerScreen(meta)
@@ -337,14 +423,15 @@ local function ledgerScreen(meta)
     UI.fill(1, 1, UI.w, 1, UI.c.panel)
     UI.write(2, 1, "PAST RUNS", UI.c.title, UI.c.panel)
     UI.hrule(1, 2, UI.w, UI.c.faint)
-    UI.write(2, 3, U.pad("run", 11) .. U.pad("depth", 8) .. U.pad("what happened", 22)
+    UI.write(2, 3, U.pad("who", 11) .. U.pad("depth", 8) .. U.pad("what happened", 22)
       .. "score", UI.c.faint)
     local rows = UI.h - 6
     for i = 1, rows do
       local e = meta.ledger[i + scroll]
       if e then
         local col = e.cause == "recovered" and UI.c.ok or UI.c.dim
-        UI.write(2, 3 + i, U.pad(e.id, 11) .. U.pad(e.depth .. "m", 8)
+        UI.write(2, 3 + i, U.pad(U.trunc(e.name or e.id, 10), 11)
+          .. U.pad(e.depth .. "m", 8)
           .. U.pad(U.trunc(e.cause, 21), 22) .. tostring(e.score), col)
       end
     end
@@ -396,6 +483,7 @@ local function mainMenu()
     end
     items[#items + 1] = { label = "how to play", key = "h", value = "help" }
     items[#items + 1] = { label = "past runs", key = "p", value = "ledger" }
+    items[#items + 1] = { label = "settings", key = "s", value = "settings" }
     items[#items + 1] = { label = "quit", key = "q", value = "quit" }
 
     UI.beginFrame()
@@ -430,6 +518,9 @@ local function mainMenu()
     if chosen == "quit" then return
     elseif chosen == "help" then briefing()
     elseif chosen == "ledger" then ledgerScreen(meta)
+    elseif chosen == "settings" then
+      openSettings(meta)
+      meta = Sv.loadMeta()
     elseif chosen == "resume" then
       local g = Sv.loadRun()
       if g then
@@ -446,9 +537,16 @@ local function mainMenu()
         go = UI.confirm("OVERWRITE", "There is a saved run. Starting a new one deletes it.")
         if go then Sv.clearRun() end
       end
+      local name = nil
+      if go and meta.settings and meta.settings.arcade then
+        name = UI.prompt("WHO IS GOING DOWN", "Your name goes on the run.",
+          { max = 12, allowQ = true })
+        if not name then go = false end
+      end
       if go then
         local seed = math.floor((os.epoch and os.epoch("utc") or os.time() * 1000)) % 2147483
         local g = R.new(seed, { kit = Sv.kitFor(meta), attempts = meta.attempts })
+        g.playerName = name
         playRun(g, meta)
         meta = Sv.loadMeta()
       end
