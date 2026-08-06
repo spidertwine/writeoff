@@ -398,6 +398,104 @@ function UI.heldDirection()
   return 0
 end
 
+--------------------------------------------------------------------- text entry
+
+-- Reads a line. mask replaces every character with it, for the password gate.
+function UI.prompt(title, message, opts)
+  opts = opts or {}
+  local buf = ""
+  local max = opts.max or 16
+  local w = math.min(UI.w - 4, math.max(30, #message + 6))
+  local lines = U.wrap(message, w - 4)
+  local h = #lines + 6
+  local x = math.floor((UI.w - w) / 2) + 1
+  local y = math.floor((UI.h - h) / 2) + 1
+  local spins = 0
+  while true do
+    spins = spins + 1
+    if spins > 4000 then return nil end
+    UI.beginFrame()
+    UI.fill(x, y, w, h, C.bg)
+    UI.frame(x, y, w, h, title, C.accent)
+    for i, ln in ipairs(lines) do UI.write(x + 2, y + i + 1, ln, C.text) end
+    local shown = opts.mask and string.rep(opts.mask, #buf) or buf
+    UI.fill(x + 2, y + h - 3, w - 4, 1, C.panel)
+    UI.write(x + 3, y + h - 3, shown .. "_", C.title, C.panel)
+    UI.write(x + 2, y + h - 2, "enter accepts   q cancels", C.faint)
+    UI.endFrame()
+    local ev = UI.read()
+    if ev.kind == "char" then
+      local ch = ev.char
+      if ch == "q" and #buf == 0 and not opts.allowQ then return nil end
+      if #buf < max then
+        if not opts.numeric or ch:match("%d") then buf = buf .. ch end
+      end
+    elseif ev.kind == "key" then
+      if ev.name == "enter" then
+        if #buf > 0 then return buf end
+      elseif ev.name == "back" then
+        if #buf == 0 then return nil end
+        buf = buf:sub(1, -2)
+      end
+    end
+  end
+end
+
+--------------------------------------------------------------------- screen effects
+
+--[[
+  A coloured ring around the map, driven by one palette slot we repaint every
+  frame. Pink is unused everywhere else, so it can be whatever colour the moment
+  needs: a dull throb of red while you are hurting, a hard flash when something
+  bites you, a green wash when a treatment takes.
+
+  On a basic terminal there is no palette to repaint, so none of this happens.
+]]
+UI.fx = { pulse = 0, flash = 0, flashRGB = nil }
+
+function UI.flash(rgb, strength)
+  if (strength or 1) <= (UI.fx.flash or 0) then return end
+  UI.fx.flash = strength or 1
+  UI.fx.flashRGB = rgb
+end
+
+function UI.tickFx()
+  UI.fx.pulse = (UI.fx.pulse + 1) % 100000
+  UI.fx.flash = math.max(0, (UI.fx.flash or 0) - 0.2)
+end
+
+function UI.fxActive()
+  return (UI.fx.flash or 0) > 0.02
+end
+
+local OVERLAY_SLOT = (colors or colours).pink
+
+-- Paints the one cell ring inside the given box. strength runs 0 to 1.
+function UI.vignette(x, y, w, h, rgb, strength)
+  if not UI.advanced or strength <= 0.03 then return end
+  if not UI.t.setPaletteColour then return end
+  local r = math.min(1, (rgb[1] or 0) * strength)
+  local g = math.min(1, (rgb[2] or 0) * strength)
+  local b = math.min(1, (rgb[3] or 0) * strength)
+  pcall(UI.t.setPaletteColour, OVERLAY_SLOT, r, g, b)
+  UI.fill(x, y, w, 1, OVERLAY_SLOT)
+  UI.fill(x, y + h - 1, w, 1, OVERLAY_SLOT)
+  UI.fill(x, y, 1, h, OVERLAY_SLOT)
+  UI.fill(x + w - 1, y, 1, h, OVERLAY_SLOT)
+end
+
+-- What the ring should look like right now, given how much pain you are in.
+function UI.painOverlay(pain)
+  local flash = UI.fx.flash or 0
+  if flash > 0.03 and UI.fx.flashRGB then
+    return UI.fx.flashRGB, math.min(1, flash)
+  end
+  local hurt = math.max(0, math.min(1, (pain - 18) / 68))
+  if hurt <= 0 then return nil, 0 end
+  local beat = 0.55 + 0.45 * math.sin(UI.fx.pulse * 0.5)
+  return { 0.30 + 0.70 * hurt, 0.02, 0.04 }, hurt * (0.35 + 0.65 * beat) * 0.9
+end
+
 function UI.drain(seconds)
   if UI.headless then
     if UI.headlessDrain then return UI.headlessDrain() end
@@ -794,6 +892,13 @@ local SFX = {
   drug      = { { "bell", 22, 0.4 }, { "bell", 24, 0.3 } },
   overdose  = { { "bass", 8, 1 }, { "bass", 4, 1 }, { "bass", 1, 1 } },
   step      = { { "hat", 6, 0.15 } },
+
+  -- traps announce themselves
+  spike     = { { "guitar", 22, 1 }, { "snare", 6, 1 }, { "bass", 2, 0.9 } },
+  snap      = { { "iron_xylophone", 4, 1 }, { "snare", 1, 1 }, { "bass", 0, 0.8 } },
+  boing     = { { "didgeridoo", 0, 1 }, { "didgeridoo", 12, 0.8 }, { "bell", 20, 0.5 } },
+  clang     = { { "iron_xylophone", 14, 0.9 }, { "hat", 18, 0.4 } },
+  gasp      = { { "flute", 4, 0.5 }, { "flute", 1, 0.4 } },
 }
 
 function UI.sfx(name)
